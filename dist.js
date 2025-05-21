@@ -62,6 +62,8 @@
 
     if (window.location.hostname.includes('reddit.com')) {
         let __redditFancyboxModalActive = false;
+        const REDDIT_MODAL_IMAGE_SELECTOR = 'img.media-lightbox-img, img[alt][src]:not([src*="emoji"])';
+
         function getBestImageUrl(img) {
             let srcset = img.getAttribute('data-lazy-srcset') || img.getAttribute('srcset');
             let url = null;
@@ -102,55 +104,23 @@
             });
             return items;
         }
-        function openFancybox(e) {
-            if (!e.target.closest('[data-testid="lightbox-template"]')) return;
-            e.stopImmediatePropagation();
-            e.preventDefault();
-            e.stopPropagation();
-            if (e.target.closest('.fancybox__container')) return;
-            const target = e.target.closest('img, video');
-            if (!target) return;
-            const galleryItems = getGalleryImages(target);
-            let startIndex = 0;
-            if (target.tagName === 'IMG') {
-                const clickedSrc = getBestImageUrl(target);
-                startIndex = galleryItems.findIndex(item => item.src === clickedSrc);
-            } else if (target.tagName === 'VIDEO') {
-                startIndex = galleryItems.findIndex(item => item.src === target.src);
-            }
-            if (galleryItems.length > 0) {
-                Fancybox.show(galleryItems.map(item => ({ src: item.src, type: item.type })), {
-                    ...commonFancyboxOptions,
-                    startIndex: startIndex
-                });
-            }
-        }
-        function addMediaListeners() {
-            const modal = document.querySelector('[data-testid="lightbox-template"]');
-            if (!modal) return;
-            const imgs = modal.querySelectorAll('img.media-lightbox-img, img[alt][src]:not([src*="emoji"])');
-            imgs.forEach(media => {
-                if (!media.dataset.fancyboxBound) {
-                    media.dataset.fancyboxBound = true;
-                    media.removeEventListener('click', openFancybox, true);
-                    media.addEventListener('click', openFancybox, true);
-                }
-            });
-        }
+
         function bindModalImageFancybox() {
             const modal = document.querySelector('[data-testid="lightbox-template"]');
             if (!modal) return;
-            const imgs = modal.querySelectorAll('img.media-lightbox-img, img[alt][src]:not([src*="emoji"])');
+            // Use the defined constant for the selector
+            const imgs = modal.querySelectorAll(REDDIT_MODAL_IMAGE_SELECTOR);
             imgs.forEach(img => {
                 if (!img.dataset.fancyboxBound) {
                     img.dataset.fancyboxBound = true;
+                    // Ensure we remove the correct listener if it was somehow previously attached with a different function
                     img.removeEventListener('click', openModalFancybox, true);
                     img.addEventListener('click', openModalFancybox, true);
                 }
             });
         }
         function clearModalFancyboxFlags() {
-            document.querySelectorAll('img.media-lightbox-img, img[alt][src]:not([src*="emoji"])').forEach(img => {
+            document.querySelectorAll(REDDIT_MODAL_IMAGE_SELECTOR).forEach(img => {
                 delete img.dataset.fancyboxBound;
             });
         }
@@ -160,9 +130,10 @@
             const modal = e.target.closest('[data-testid="lightbox-template"]');
             if (!modal) return;
             let imgs = Array.from(modal.querySelectorAll('figure img.media-lightbox-img'));
-            if (imgs.length === 0) {
-                imgs = Array.from(modal.querySelectorAll('img[alt][src]:not([src*="emoji"])'));
+            if (imgs.length === 0) { // Fallback for single-image modal structure
+                imgs = Array.from(modal.querySelectorAll(REDDIT_MODAL_IMAGE_SELECTOR));
             }
+
             const seen = new Set();
             const gallery = imgs.map(img => ({ src: getBestImageUrl(img), type: 'image', el: img }))
                 .filter(item => {
@@ -189,7 +160,7 @@
             let attempts = 0;
             function tryOpen() {
                 if (!modal.parentNode) return;
-                let img = modal.querySelector('figure img.media-lightbox-img') || modal.querySelector('img[alt][src]:not([src*="emoji"])');
+                let img = modal.querySelector('figure img.media-lightbox-img') || modal.querySelector(REDDIT_MODAL_IMAGE_SELECTOR);
                 const closeBtn = modal.querySelector('button[data-testid="close-button"]');
                 if (img && img.complete && img.naturalWidth > 0 && getComputedStyle(modal).opacity === '1') {
                     bindModalImageFancybox();
@@ -239,26 +210,35 @@
             });
             observer.observe(document.body, { childList: true, subtree: true });
         }
-        const mediaListenersObserver = new MutationObserver(addMediaListeners);
-        mediaListenersObserver.observe(document.body, { childList: true, subtree: true });
-        addMediaListeners();
+        // Removed mediaListenersObserver and its call to addMediaListeners as automateModalToFancybox handles the modal replacement.
         automateModalToFancybox();
     }
 
     if (window.location.hostname.includes('x.com')) {
         function getOriginalImageUrl(src) {
-            if (src.includes('?')) {
+            if (!src || !src.includes('pbs.twimg.com')) return src;
+
+            try {
                 const url = new URL(src);
-                const params = new URLSearchParams(url.search);
-                params.set('name', 'orig');
-                return `${url.origin}${url.pathname}?${params.toString()}`;
-            } else {
-                if (src.includes('format=')) {
-                    return src.replace(/(&|\?)format=[^&]+/, '$1name=orig');
+                if (url.search) { // Has query parameters
+                    const params = new URLSearchParams(url.search);
+                    params.set('name', 'orig'); // This should override existing 'name' or add it.
+                                                // It typically makes 'format' redundant or overrides it.
+                    return `${url.origin}${url.pathname}?${params.toString()}`;
+                } else { // No query parameters, likely uses :large, :medium etc. in path
+                    // Remove any existing colon-suffix (like :large, :medium, :small, :thumb) and append :orig
+                    return src.replace(/:\w*$/, '') + ':orig';
                 }
-                return src.includes(':large') ? src.replace(':large', ':orig') : src + ':orig';
+            } catch (e) {
+                console.warn('[Enhanced ImageViewer] Failed to parse URL for X/Twitter image:', src, e);
+                // Fallback for unparseable URLs, try simple suffix replacement if no query string
+                if (!src.includes('?')) {
+                    return src.replace(/:\w*$/, '') + ':orig';
+                }
+                return src; // Return original if parsing failed and has query string
             }
         }
+
         function getGalleryImages(target) {
             let mediaContainer;
             const tweet = target.closest('article[role="article"]');
@@ -267,24 +247,27 @@
             } else {
                 mediaContainer = target.closest('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]');
                 if (mediaContainer) {
-                    let parentCounter = 0;
-                    let tempContainer = mediaContainer.parentElement;
-                    while(tempContainer && parentCounter < 5) {
-                        if (tempContainer.querySelectorAll('img[src*="pbs.twimg.com"], video[src*="video.twimg.com"]').length > 1) {
-                            mediaContainer = tempContainer;
+                    // Try to find a shared parent if multiple images/videos are grouped nearby
+                    let potentialGalleryParent = mediaContainer.parentElement;
+                    for (let i = 0; i < 3 && potentialGalleryParent; i++) { // Check a few levels up
+                        // Check if this parent contains more than one potential media item for a gallery
+                        if (potentialGalleryParent.querySelectorAll('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), video[src*="video.twimg.com"]').length > 1) {
+                            mediaContainer = potentialGalleryParent;
                             break;
                         }
-                        tempContainer = tempContainer.parentElement;
-                        parentCounter++;
+                        potentialGalleryParent = potentialGalleryParent.parentElement;
                     }
-                    if (!mediaContainer.parentElement && target.closest('[aria-label*="Timeline:"]')) {
-                         mediaContainer = target.closest('[aria-label*="Timeline:"]');
-                    }
-                } else {
-                     mediaContainer = target.closest('[aria-label*="Timeline:"]');
+                }
+                // If no specific media container or tweet, try a broader timeline context
+                if (!mediaContainer) {
+                    mediaContainer = target.closest('[aria-label*="Timeline:"]');
                 }
             }
-            if (!mediaContainer) mediaContainer = document.body;
+
+            if (!mediaContainer) {
+                return []; // If no suitable container is found, return an empty array
+            }
+
             const items = [];
             const seenUrls = new Set();
             mediaContainer.querySelectorAll('img[src*="pbs.twimg.com"]:not([src*="profile_images"])').forEach(img => {
@@ -296,7 +279,8 @@
             });
             mediaContainer.querySelectorAll('video[src*="video.twimg.com"]').forEach(video => {
                 const videoSrc = video.querySelector('source[src*="video.twimg.com"]')?.src || video.src;
-                if(videoSrc && !seenUrls.has(videoSrc)) {
+                // Ensure videoSrc is a string and not empty
+                if (typeof videoSrc === 'string' && videoSrc && !seenUrls.has(videoSrc)) {
                     items.push({ src: videoSrc, type: 'video', el: video });
                     seenUrls.add(videoSrc);
                 }
@@ -305,12 +289,15 @@
         }
         function openFancybox(e) {
             const clickedElement = e.target;
+            // Do not open Fancybox if clicking on a username link within a tweet, or inside an existing Fancybox
             if (clickedElement.closest('.fancybox__container') ||
-                clickedElement.closest('a[href^="/"] [data-testid="User-Name"]')) {
+                clickedElement.closest('a[href^="/"][role="link"] [data-testid="User-Name"]') || // More specific selector for username links
+                clickedElement.closest('a[href*="/status/"] [dir="ltr"] > span, a[href*="/status/"] [data-testid="socialContext"]')) { // Links to other tweets or social context
                 return;
             }
+
             const targetMediaElement = clickedElement.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), video[src*="video.twimg.com"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]');
-            if (!targetMediaElement) return;
+            if (!targetMediaElement) return; // No relevant media element was clicked
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
@@ -319,11 +306,14 @@
             if (targetMediaElement.tagName === 'IMG' && targetMediaElement.src.includes('pbs.twimg.com')) {
                 const clickedSrc = getOriginalImageUrl(targetMediaElement.src);
                 startIndex = galleryItems.findIndex(item => item.src === clickedSrc);
-            } else if (targetMediaElement.tagName === 'VIDEO' && targetMediaElement.src.includes('video.twimg.com')) {
-                const clickedSrc = targetMediaElement.src;
+            } else if (targetMediaElement.tagName === 'VIDEO') { // Could be the VIDEO tag itself or a source inside
+                const videoSrc = targetMediaElement.querySelector('source[src*="video.twimg.com"]')?.src || targetMediaElement.src;
+                const clickedSrc = videoSrc;
                 startIndex = galleryItems.findIndex(item => item.src === clickedSrc || item.el === targetMediaElement);
-            } else if (galleryItems.length > 0) {
-                 const firstImage = galleryItems.find(item => item.type ==='image');
+            } else if (galleryItems.length > 0) { // Fallback if clicked on a container like data-testid="tweetPhoto"
+                 // Try to find the actual image element within the clicked container if possible, or default to first image
+                 const actualImgInContainer = targetMediaElement.querySelector('img[src*="pbs.twimg.com"]:not([src*="profile_images"])');
+                 const firstImage = actualImgInContainer ? galleryItems.find(item => item.el === actualImgInContainer) : galleryItems.find(item => item.type ==='image');
                  if (firstImage) startIndex = galleryItems.indexOf(firstImage);
             }
             if (galleryItems.length > 0) {
@@ -337,15 +327,19 @@
             }
         }
         function addMediaListeners() {
-            const targetNode = document.querySelector('body');
+            const targetNode = document.body; // Listen on the body for delegated events
             if (!targetNode) return;
+
+            // Prevent attaching multiple listeners to the body
             if (targetNode.dataset.xFancyboxListenersAttached) return;
+
             targetNode.addEventListener('click', function(e) {
                 const mediaTarget = e.target.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), video[src*="video.twimg.com"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]');
                 if (mediaTarget) {
-                    if (mediaTarget.closest('article[role="article"], [aria-label*="Timeline:"], [data-testid="lightbox"]')) {
+                    // Ensure the media is part of a tweet, timeline, or a modal/lightbox structure that we want to enhance
+                    if (mediaTarget.closest('article[role="article"], [aria-label*="Timeline:"], div[aria-labelledby^="modal-header"]')) {
                          const potentialGallery = getGalleryImages(mediaTarget);
-                        if(potentialGallery && potentialGallery.length > 0){
+                        if (potentialGallery && potentialGallery.length > 0){
                             openFancybox(e);
                         }
                     }
@@ -353,7 +347,8 @@
             }, true);
             targetNode.dataset.xFancyboxListenersAttached = 'true';
         }
-        addMediaListeners();
+        // Initial call to set up the delegated listener
+        addMediaListeners(); 
     }
 
 })();
