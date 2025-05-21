@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      1.0
 // @description  Replaces default image galleries with Fancybox v5.0.36 on DeviantArt, Reddit, and X (Twitter).
-// @author       You
+// @author       Kaleab Getnet
 // @match        https://www.deviantart.com/*
 // @match        https://reddit.com/*
 // @match        https://www.reddit.com/*
