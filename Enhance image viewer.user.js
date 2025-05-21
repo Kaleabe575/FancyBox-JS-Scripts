@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Enhance image viewer
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.01
 // @description  Replaces default image galleries with Fancybox v5.0.36 on DeviantArt, Reddit, and X (Twitter).
 // @author       Kaleab Getnet
 // @match        https://www.deviantart.com/*
