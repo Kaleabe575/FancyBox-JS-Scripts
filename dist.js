@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Unified Fancybox Gallery
+// @name         Enhanced image viewer
 // @namespace    http://tampermonkey.net/
 // @version      1.0
 // @description  Replaces default image galleries with Fancybox v5.0.36 on DeviantArt, Reddit, and X (Twitter).
@@ -8,6 +8,7 @@
 // @match        https://reddit.com/*
 // @match        https://www.reddit.com/*
 // @match        https://x.com/*
+// @match        https://twitter.com/*
 // @require      https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.36/dist/fancybox/fancybox.umd.js
 // @resource     fancyboxCSS https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.36/dist/fancybox/fancybox.css
 // @grant        GM_addStyle
