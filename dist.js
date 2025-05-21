@@ -102,9 +102,6 @@
                     items.push({ src, type: 'image', el: img });
                 }
             });
-            post.querySelectorAll('video').forEach(video => {
-                if (video.src) items.push({ src: video.src, type: 'video', el: video });
-            });
             return items;
         }
 
@@ -114,15 +111,13 @@
             e.preventDefault();
             e.stopPropagation();
             if (e.target.closest('.fancybox__container')) return;
-            const target = e.target.closest('img, video');
+            const target = e.target.closest('img');
             if (!target) return;
             const galleryItems = getGalleryImages(target);
             let startIndex = 0;
             if (target.tagName === 'IMG') {
                 const clickedSrc = getBestImageUrl(target);
                 startIndex = galleryItems.findIndex(item => item.src === clickedSrc);
-            } else if (target.tagName === 'VIDEO') {
-                startIndex = galleryItems.findIndex(item => item.src === target.src);
             }
             if (galleryItems.length > 0) {
                 Fancybox.show(galleryItems.map(item => ({ src: item.src, type: item.type })), {
@@ -282,17 +277,15 @@
             if (tweet) {
                 mediaContainer = tweet;
             } else {
-                mediaContainer = target.closest('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]');
+                mediaContainer = target.closest('[data-testid="tweetPhoto"]');
                 if (mediaContainer) {
-                    let parentCounter = 0;
-                    let tempContainer = mediaContainer.parentElement;
-                    while(tempContainer && parentCounter < 5) {
-                        if (tempContainer.querySelectorAll('img[src*="pbs.twimg.com"], video[src*="video.twimg.com"]').length > 1) {
-                            mediaContainer = tempContainer;
+                    let potentialGalleryParent = mediaContainer.parentElement;
+                    for (let i = 0; i < 3 && potentialGalleryParent; i++) {
+                        if (potentialGalleryParent.querySelectorAll('img[src*="pbs.twimg.com"]:not([src*="profile_images"])').length > 1) {
+                            mediaContainer = potentialGalleryParent;
                             break;
                         }
-                        tempContainer = tempContainer.parentElement;
-                        parentCounter++;
+                        potentialGalleryParent = potentialGalleryParent.parentElement;
                     }
                     if (!mediaContainer.parentElement && target.closest('[aria-label*="Timeline:"]')) {
                          mediaContainer = target.closest('[aria-label*="Timeline:"]');
@@ -313,13 +306,6 @@
                     seenUrls.add(origSrc);
                 }
             });
-            mediaContainer.querySelectorAll('video[src*="video.twimg.com"]').forEach(video => {
-                const videoSrc = video.querySelector('source[src*="video.twimg.com"]')?.src || video.src;
-                if(videoSrc && !seenUrls.has(videoSrc)) {
-                    items.push({ src: videoSrc, type: 'video', el: video });
-                    seenUrls.add(videoSrc);
-                }
-            });
             return items;
         }
 
@@ -330,7 +316,7 @@
                 return;
             }
 
-            const targetMediaElement = clickedElement.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), video[src*="video.twimg.com"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]');
+            const targetMediaElement = clickedElement.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), [data-testid="tweetPhoto"]');
 
             if (!targetMediaElement) return;
 
@@ -345,9 +331,6 @@
             if (targetMediaElement.tagName === 'IMG' && targetMediaElement.src.includes('pbs.twimg.com')) {
                 const clickedSrc = getOriginalImageUrl(targetMediaElement.src);
                 startIndex = galleryItems.findIndex(item => item.src === clickedSrc);
-            } else if (targetMediaElement.tagName === 'VIDEO' && targetMediaElement.src.includes('video.twimg.com')) {
-                const clickedSrc = targetMediaElement.src;
-                startIndex = galleryItems.findIndex(item => item.src === clickedSrc || item.el === targetMediaElement);
             } else if (galleryItems.length > 0) {
                  const firstImage = galleryItems.find(item => item.type ==='image');
                  if (firstImage) startIndex = galleryItems.indexOf(firstImage);
@@ -372,7 +355,7 @@
             if (targetNode.dataset.xFancyboxListenersAttached) return;
 
             targetNode.addEventListener('click', function(e) {
-                const mediaTarget = e.target.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), video[src*="video.twimg.com"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]');
+                const mediaTarget = e.target.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), [data-testid="tweetPhoto"]');
                 if (mediaTarget) {
                     if (mediaTarget.closest('article[role="article"], [aria-label*="Timeline:"]')) {
                         const potentialGallery = getGalleryImages(mediaTarget);
