@@ -13,8 +13,8 @@
 // @resource     fancyboxCSS https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.36/dist/fancybox/fancybox.css
 // @grant        GM_addStyle
 // @grant        GM_getResourceText
-// @updateURL    https://raw.githubusercontent.com/Kaleabe575/FancyBox-JS-Scripts/refs/heads/main/dist.js?token=GHSAT0AAAAAADEIWBSN4HEZLQWADDVJFSK42BNYRYQ
-// @downloadURL  https://raw.githubusercontent.com/Kaleabe575/FancyBox-JS-Scripts/refs/heads/main/dist.js?token=GHSAT0AAAAAADEIWBSN4HEZLQWADDVJFSK42BNYRYQ
+// @updateURL    https://github.com/Kaleabe575/FancyBox-JS-Scripts/raw/refs/heads/main/Enhance%20image%20viewer.user.js
+// @downloadURL  https://github.com/Kaleabe575/FancyBox-JS-Scripts/raw/refs/heads/main/Enhance%20image%20viewer.user.js
 // ==/UserScript==
 
 (function() {
