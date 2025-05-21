@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Enhanced image viewer
+// @name         Unified Fancybox Gallery
 // @namespace    http://tampermonkey.net/
 // @version      1.0
 // @description  Replaces default image galleries with Fancybox v5.0.36 on DeviantArt, Reddit, and X (Twitter).
@@ -8,7 +8,6 @@
 // @match        https://reddit.com/*
 // @match        https://www.reddit.com/*
 // @match        https://x.com/*
-// @match        https://twitter.com/*
 // @require      https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.36/dist/fancybox/fancybox.umd.js
 // @resource     fancyboxCSS https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.36/dist/fancybox/fancybox.css
 // @grant        GM_addStyle
@@ -18,8 +17,10 @@
 (function() {
     'use strict';
 
+    // Inject Fancybox CSS
     GM_addStyle(GM_getResourceText('fancyboxCSS'));
 
+    // Common Fancybox options
     const commonFancyboxOptions = {
         hideScrollbar: false,
         Carousel: { infinite: false },
@@ -32,38 +33,54 @@
                 right: ["slideshow", "download", "thumbs", "close"],
             },
         },
-        Html: { loop: false }
+        Html: { loop: false } // Consistent loop setting
     };
 
+    // --- DeviantArt Specific Logic ---
     if (window.location.hostname.includes('deviantart.com')) {
+        // Utility: Convert thumbnail URLs to high-quality versions.
         function getHighQualityImageUrl(src) {
             return src.includes("/th/") ? src.replace("/th/", "/") : src;
         }
 
+        // Main click handler: when an image with "cursor: zoom-in" is clicked, open it.
         function handleDocumentClick(e) {
+            // Ignore clicks inside FancyBox's modal container.
             if (e.target.closest('.fancybox__container')) return;
+
+            // Get a reference to the image element.
             let target = e.target;
             if (target.tagName !== "IMG") {
                 target = target.closest("img");
             }
             if (!target) return;
+
+            // Proceed only if the computed cursor style is exactly "zoom-in".
             const computedCursor = window.getComputedStyle(target).cursor;
             if (computedCursor !== "zoom-in") return;
+
+            // Prevent the default behavior.
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
+
+            // Open FancyBox with just the clicked image and use common options.
             Fancybox.show(
                 [{ src: getHighQualityImageUrl(target.src), type: "image" }],
-                { ...commonFancyboxOptions }
+                { ...commonFancyboxOptions } // Use common options
             );
         }
+
+        // Attach the event listener at the capture phase.
         document.documentElement.addEventListener("click", handleDocumentClick, true);
+        console.log("DeviantArt Fancybox script active."); // For debugging
     }
 
+    // --- Reddit Specific Logic ---
     if (window.location.hostname.includes('reddit.com')) {
-        let __redditFancyboxModalActive = false;
-        const REDDIT_MODAL_IMAGE_SELECTOR = 'img.media-lightbox-img, img[alt][src]:not([src*="emoji"])';
+        let __redditFancyboxModalActive = false; // Scoped variable
 
+        // Helper: Get highest quality image from srcset or data-lazy-srcset
         function getBestImageUrl(img) {
             let srcset = img.getAttribute('data-lazy-srcset') || img.getAttribute('srcset');
             let url = null;
@@ -79,7 +96,8 @@
             if (!url) {
                 url = img.getAttribute('data-lazy-src') || img.src;
             }
-            if (url && /preview\.redd\.it\//.test(url)) {
+            // Try to get original quality for Reddit-hosted images
+            if (url && /preview\.redd\.it\//.test(url)) { // Escaped regex
                 const match = url.match(/-v0-([a-zA-Z0-9]+)\.(jpg|jpeg|png|gif|webp)/);
                 if (match) {
                     const hash = match[1];
@@ -89,6 +107,8 @@
             }
             return url;
         }
+
+        // Collect all images in the post (for galleries)
         function getGalleryImages(target) {
             const post = target.closest('.Post');
             if (!post) return [];
@@ -99,37 +119,79 @@
                     items.push({ src, type: 'image', el: img });
                 }
             });
+            post.querySelectorAll('video').forEach(video => {
+                if (video.src) items.push({ src: video.src, type: 'video', el: video });
+            });
+            return items;
+        }
+
+        // Open Fancybox for a post image/video
+        function openFancybox(e) {
+            if (!e.target.closest('[data-testid="lightbox-template"]')) return;
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.target.closest('.fancybox__container')) return;
+            const target = e.target.closest('img, video');
+            if (!target) return;
+            const galleryItems = getGalleryImages(target);
+            let startIndex = 0;
+            if (target.tagName === 'IMG') {
+                const clickedSrc = getBestImageUrl(target);
+                startIndex = galleryItems.findIndex(item => item.src === clickedSrc);
+            } else if (target.tagName === 'VIDEO') {
+                startIndex = galleryItems.findIndex(item => item.src === target.src);
+            }
+            if (galleryItems.length > 0) {
+                Fancybox.show(galleryItems.map(item => ({ src: item.src, type: item.type })), {
+                    ...commonFancyboxOptions, // Use common options
+                    startIndex: startIndex
+                });
+            }
+        }
+
+        // Attach event listeners to all post images/videos, override Reddit's modal
+        function addMediaListeners() {
+            const modal = document.querySelector('[data-testid="lightbox-template"]');
+            if (!modal) return;
+            const imgs = modal.querySelectorAll('img.media-lightbox-img, img[alt][src]:not([src*="emoji"])');
+            imgs.forEach(media => {
+                if (!media.dataset.fancyboxBound) {
+                    media.dataset.fancyboxBound = true;
+                    media.removeEventListener('click', openFancybox, true);
+                    media.addEventListener('click', openFancybox, true);
+                }
+            });
         }
 
         function bindModalImageFancybox() {
             const modal = document.querySelector('[data-testid="lightbox-template"]');
             if (!modal) return;
-            // Use the defined constant for the selector
-            const imgs = modal.querySelectorAll(REDDIT_MODAL_IMAGE_SELECTOR);
+            const imgs = modal.querySelectorAll('img.media-lightbox-img, img[alt][src]:not([src*="emoji"])');
             imgs.forEach(img => {
                 if (!img.dataset.fancyboxBound) {
                     img.dataset.fancyboxBound = true;
-                    // Ensure we remove the correct listener if it was somehow previously attached with a different function
                     img.removeEventListener('click', openModalFancybox, true);
                     img.addEventListener('click', openModalFancybox, true);
                 }
             });
         }
+
         function clearModalFancyboxFlags() {
-            document.querySelectorAll(REDDIT_MODAL_IMAGE_SELECTOR).forEach(img => {
+            document.querySelectorAll('img.media-lightbox-img, img[alt][src]:not([src*="emoji"])').forEach(img => {
                 delete img.dataset.fancyboxBound;
             });
         }
+
         function openModalFancybox(e) {
             e.preventDefault();
             e.stopPropagation();
             const modal = e.target.closest('[data-testid="lightbox-template"]');
             if (!modal) return;
             let imgs = Array.from(modal.querySelectorAll('figure img.media-lightbox-img'));
-            if (imgs.length === 0) { // Fallback for single-image modal structure
-                imgs = Array.from(modal.querySelectorAll(REDDIT_MODAL_IMAGE_SELECTOR));
+            if (imgs.length === 0) {
+                imgs = Array.from(modal.querySelectorAll('img[alt][src]:not([src*="emoji"])'));
             }
-
             const seen = new Set();
             const gallery = imgs.map(img => ({ src: getBestImageUrl(img), type: 'image', el: img }))
                 .filter(item => {
@@ -141,7 +203,7 @@
             if (gallery.length > 0) {
                 __redditFancyboxModalActive = true;
                 Fancybox.show(gallery.map(item => ({ src: item.src, type: item.type })), {
-                    ...commonFancyboxOptions,
+                    ...commonFancyboxOptions, // Use common options
                     startIndex: startIndex >= 0 ? startIndex : 0,
                     on: {
                         destroy: () => {
@@ -152,11 +214,12 @@
                 });
             }
         }
+
         function triggerFancyboxOnModalImage(modal) {
             let attempts = 0;
             function tryOpen() {
                 if (!modal.parentNode) return;
-                let img = modal.querySelector('figure img.media-lightbox-img') || modal.querySelector(REDDIT_MODAL_IMAGE_SELECTOR);
+                let img = modal.querySelector('figure img.media-lightbox-img') || modal.querySelector('img[alt][src]:not([src*="emoji"])');
                 const closeBtn = modal.querySelector('button[data-testid="close-button"]');
                 if (img && img.complete && img.naturalWidth > 0 && getComputedStyle(modal).opacity === '1') {
                     bindModalImageFancybox();
@@ -184,6 +247,7 @@
             }
             tryOpen();
         }
+
         function automateModalToFancybox() {
             let lastModalVisible = false;
             let debounce = false;
@@ -206,58 +270,70 @@
             });
             observer.observe(document.body, { childList: true, subtree: true });
         }
-        // Removed mediaListenersObserver and its call to addMediaListeners as automateModalToFancybox handles the modal replacement.
+
+        const mediaListenersObserver = new MutationObserver(addMediaListeners);
+        mediaListenersObserver.observe(document.body, { childList: true, subtree: true });
+        addMediaListeners();
         automateModalToFancybox();
+        console.log("Reddit Fancybox script active."); // For debugging
     }
 
+    // --- Twitter (X) Specific Logic ---
     if (window.location.hostname.includes('x.com')) {
-        // Returns the original quality image URL for Twitter/X images
+
+        // Function to generate the original image URL
         function getOriginalImageUrl(src) {
-            if (!src || !src.includes('pbs.twimg.com')) return src;
-            try {
+            if (src.includes('?')) {
                 const url = new URL(src);
-                if (url.search) {
-                    const params = new URLSearchParams(url.search);
-                    params.set('name', 'orig');
-                    return `${url.origin}${url.pathname}?${params.toString()}`;
-                } else {
-                    return src.replace(/:\w*$/, '') + ':orig';
+                const params = new URLSearchParams(url.search);
+                params.set('name', 'orig');
+                return `${url.origin}${url.pathname}?${params.toString()}`;
+            } else {
+                // Twitter's new URL format might not have '?' for media,
+                // and ':orig' might not always work if 'name' param is absent.
+                // A more robust way for new URLs: if format=... is present, change to orig.
+                if (src.includes('format=')) {
+                    return src.replace(/(&|\?)format=[^&]+/, '$1name=orig');
                 }
-            } catch (e) {
-                if (!src.includes('?')) {
-                    return src.replace(/:\w*$/, '') + ':orig';
-                }
-                return src;
+                // Fallback for older or different URL structures if any
+                return src.includes(':large') ? src.replace(':large', ':orig') : src + ':orig';
             }
         }
 
-        // Collects all image elements in the relevant Twitter/X container
+        // Function to collect all images and videos in the relevant container
         function getGalleryImages(target) {
             let mediaContainer;
             const tweet = target.closest('article[role="article"]');
+
             if (tweet) {
                 mediaContainer = tweet;
             } else {
-                mediaContainer = target.closest('[data-testid="tweetPhoto"]');
+                // Try to find a suitable container for media in other views (e.g., media tab)
+                mediaContainer = target.closest('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]');
                 if (mediaContainer) {
-                    let potentialGalleryParent = mediaContainer.parentElement;
-                    for (let i = 0; i < 3 && potentialGalleryParent; i++) {
-                        if (potentialGalleryParent.querySelectorAll('img[src*="pbs.twimg.com"]:not([src*="profile_images"])').length > 1) {
-                            mediaContainer = potentialGalleryParent;
+                    // Heuristic: go up a few levels to find a common parent for multiple images if they exist
+                    let parentCounter = 0;
+                    let tempContainer = mediaContainer.parentElement;
+                    while(tempContainer && parentCounter < 5) { // Limit search depth
+                        if (tempContainer.querySelectorAll('img[src*="pbs.twimg.com"], video[src*="video.twimg.com"]').length > 1) {
+                            mediaContainer = tempContainer;
                             break;
                         }
-                        potentialGalleryParent = potentialGalleryParent.parentElement;
+                        tempContainer = tempContainer.parentElement;
+                        parentCounter++;
                     }
-                }
-                if (!mediaContainer) {
-                    mediaContainer = target.closest('[aria-label*="Timeline:"]');
+                    if (!mediaContainer.parentElement && target.closest('[aria-label*="Timeline:"]')) { // If still not good, check timeline
+                         mediaContainer = target.closest('[aria-label*="Timeline:"]');
+                    }
+                } else {
+                     mediaContainer = target.closest('[aria-label*="Timeline:"]');
                 }
             }
-            if (!mediaContainer) {
-                return [];
-            }
+            if (!mediaContainer) mediaContainer = document.body; // Fallback to body, less ideal
+
             const items = [];
             const seenUrls = new Set();
+
             mediaContainer.querySelectorAll('img[src*="pbs.twimg.com"]:not([src*="profile_images"])').forEach(img => {
                 const origSrc = getOriginalImageUrl(img.src);
                 if (!seenUrls.has(origSrc)) {
@@ -265,62 +341,105 @@
                     seenUrls.add(origSrc);
                 }
             });
+            mediaContainer.querySelectorAll('video[src*="video.twimg.com"]').forEach(video => {
+                // For videos, the src attribute is usually direct.
+                // If videos also have preview images that are caught by the img selector,
+                // ensure they are handled or deduplicated if necessary.
+                // For now, assume video src is unique enough.
+                const videoSrc = video.querySelector('source[src*="video.twimg.com"]')?.src || video.src;
+                if(videoSrc && !seenUrls.has(videoSrc)) {
+                    items.push({ src: videoSrc, type: 'video', el: video });
+                    seenUrls.add(videoSrc);
+                }
+            });
             return items;
         }
 
-        // Handles click event to open Fancybox for images
+        // Function to open media in Fancybox
         function openFancybox(e) {
+            // Check if the click is on a relevant element or inside something we should ignore
             const clickedElement = e.target;
             if (clickedElement.closest('.fancybox__container') ||
-                clickedElement.closest('a[href^="/"][role="link"] [data-testid="User-Name"]') ||
-                clickedElement.closest('a[href*="/status/"] [dir="ltr"] > span, a[href*="/status/"] [data-testid="socialContext"]')) {
+                clickedElement.closest('a[href^="/"] [data-testid="User-Name"]')) { // Ignore clicks on user profile links within cards
                 return;
             }
-            const targetMediaElement = clickedElement.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), [data-testid="tweetPhoto"]');
+
+            const targetMediaElement = clickedElement.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), video[src*="video.twimg.com"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]');
+
             if (!targetMediaElement) return;
+
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
+
+
             const galleryItems = getGalleryImages(targetMediaElement);
             let startIndex = 0;
+
             if (targetMediaElement.tagName === 'IMG' && targetMediaElement.src.includes('pbs.twimg.com')) {
                 const clickedSrc = getOriginalImageUrl(targetMediaElement.src);
                 startIndex = galleryItems.findIndex(item => item.src === clickedSrc);
-            } else if (galleryItems.length > 0) {
-                const actualImgInContainer = targetMediaElement.querySelector('img[src*="pbs.twimg.com"]:not([src*="profile_images"])');
-                const firstImage = actualImgInContainer ? galleryItems.find(item => item.el === actualImgInContainer) : galleryItems.find(item => item.type ==='image');
-                if (firstImage) startIndex = galleryItems.indexOf(firstImage);
+            } else if (targetMediaElement.tagName === 'VIDEO' && targetMediaElement.src.includes('video.twimg.com')) {
+                const clickedSrc = targetMediaElement.src; // or from source element
+                startIndex = galleryItems.findIndex(item => item.src === clickedSrc || item.el === targetMediaElement);
+            } else if (galleryItems.length > 0) { // Fallback for clicks on container like tweetPhoto
+                 const firstImage = galleryItems.find(item => item.type ==='image');
+                 if (firstImage) startIndex = galleryItems.indexOf(firstImage);
             }
+
+
             if (galleryItems.length > 0) {
                 Fancybox.show(galleryItems.map(item => ({
                     src: item.src,
                     type: item.type
                 })), {
-                    ...commonFancyboxOptions,
-                    startIndex: Math.max(0, startIndex)
+                    ...commonFancyboxOptions, // Use common options
+                    startIndex: Math.max(0, startIndex) // Ensure startIndex is not -1
                 });
             }
         }
 
-        // Adds delegated click event listener for images
+        // Function to apply event listeners to media elements
         function addMediaListeners() {
-            const targetNode = document.body;
+            // More specific selectors might be needed if Twitter's DOM is very dynamic
+            // Listen on a higher-level stable element if direct binding is problematic
+            const targetNode = document.querySelector('body'); // Observe body or primary column
             if (!targetNode) return;
+
+            // Debounce or ensure listeners are not added multiple times unnecessarily
             if (targetNode.dataset.xFancyboxListenersAttached) return;
+
+            // Using event delegation on a stable parent
             targetNode.addEventListener('click', function(e) {
-                const mediaTarget = e.target.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), [data-testid="tweetPhoto"]');
+                // Check if the clicked element (or its parent) is a media item we care about
+                const mediaTarget = e.target.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), video[src*="video.twimg.com"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]');
                 if (mediaTarget) {
-                    if (mediaTarget.closest('article[role="article"], [aria-label*="Timeline:"], div[aria-labelledby^="modal-header"]')) {
+                    // Further check: ensure it's within an article or a media timeline context if possible
+                    // This helps avoid triggering on profile pictures in mentions, etc.
+                    if (mediaTarget.closest('article[role="article"], [aria-label*="Timeline:"], [data-testid="lightbox"]')) {
+                         // Prevent default image link navigation only if we are opening fancybox
                         const potentialGallery = getGalleryImages(mediaTarget);
-                        if (potentialGallery && potentialGallery.length > 0){
-                            openFancybox(e);
+                        if(potentialGallery && potentialGallery.length > 0){
+                            openFancybox(e); // Pass the event object
                         }
                     }
                 }
-            }, true);
+            }, true); // Use capture phase
+
             targetNode.dataset.xFancyboxListenersAttached = 'true';
         }
+
+        // Initial run & Observer for dynamic content
+        // Twitter loads content dynamically, so we need to re-apply listeners or use delegation.
+        // Event delegation (used in addMediaListeners above) is generally better for performance.
+        // A MutationObserver can be a fallback or used for elements that delegation doesn't catch well.
+
+        // We are using event delegation in addMediaListeners, so a complex observer might not be needed
+        // if the delegation target (document.body) is sufficient.
+        // However, if there are specific containers that get replaced entirely, an observer might be useful.
+        // For now, relying on the delegated event from addMediaListeners.
         addMediaListeners();
+        console.log("Twitter (X) Fancybox script active."); // For debugging
     }
 
 })();
