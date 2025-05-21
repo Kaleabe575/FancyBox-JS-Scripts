@@ -99,10 +99,6 @@
                     items.push({ src, type: 'image', el: img });
                 }
             });
-            post.querySelectorAll('video').forEach(video => {
-                if (video.src) items.push({ src: video.src, type: 'video', el: video });
-            });
-            return items;
         }
 
         function bindModalImageFancybox() {
@@ -215,59 +211,51 @@
     }
 
     if (window.location.hostname.includes('x.com')) {
+        // Returns the original quality image URL for Twitter/X images
         function getOriginalImageUrl(src) {
             if (!src || !src.includes('pbs.twimg.com')) return src;
-
             try {
                 const url = new URL(src);
-                if (url.search) { // Has query parameters
+                if (url.search) {
                     const params = new URLSearchParams(url.search);
-                    params.set('name', 'orig'); // This should override existing 'name' or add it.
-                                                // It typically makes 'format' redundant or overrides it.
+                    params.set('name', 'orig');
                     return `${url.origin}${url.pathname}?${params.toString()}`;
-                } else { // No query parameters, likely uses :large, :medium etc. in path
-                    // Remove any existing colon-suffix (like :large, :medium, :small, :thumb) and append :orig
+                } else {
                     return src.replace(/:\w*$/, '') + ':orig';
                 }
             } catch (e) {
-                console.warn('[Enhanced ImageViewer] Failed to parse URL for X/Twitter image:', src, e);
-                // Fallback for unparseable URLs, try simple suffix replacement if no query string
                 if (!src.includes('?')) {
                     return src.replace(/:\w*$/, '') + ':orig';
                 }
-                return src; // Return original if parsing failed and has query string
+                return src;
             }
         }
 
+        // Collects all image elements in the relevant Twitter/X container
         function getGalleryImages(target) {
             let mediaContainer;
             const tweet = target.closest('article[role="article"]');
             if (tweet) {
                 mediaContainer = tweet;
             } else {
-                mediaContainer = target.closest('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]');
+                mediaContainer = target.closest('[data-testid="tweetPhoto"]');
                 if (mediaContainer) {
-                    // Try to find a shared parent if multiple images/videos are grouped nearby
                     let potentialGalleryParent = mediaContainer.parentElement;
-                    for (let i = 0; i < 3 && potentialGalleryParent; i++) { // Check a few levels up
-                        // Check if this parent contains more than one potential media item for a gallery
-                        if (potentialGalleryParent.querySelectorAll('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), video[src*="video.twimg.com"]').length > 1) {
+                    for (let i = 0; i < 3 && potentialGalleryParent; i++) {
+                        if (potentialGalleryParent.querySelectorAll('img[src*="pbs.twimg.com"]:not([src*="profile_images"])').length > 1) {
                             mediaContainer = potentialGalleryParent;
                             break;
                         }
                         potentialGalleryParent = potentialGalleryParent.parentElement;
                     }
                 }
-                // If no specific media container or tweet, try a broader timeline context
                 if (!mediaContainer) {
                     mediaContainer = target.closest('[aria-label*="Timeline:"]');
                 }
             }
-
             if (!mediaContainer) {
-                return []; // If no suitable container is found, return an empty array
+                return [];
             }
-
             const items = [];
             const seenUrls = new Set();
             mediaContainer.querySelectorAll('img[src*="pbs.twimg.com"]:not([src*="profile_images"])').forEach(img => {
@@ -277,27 +265,19 @@
                     seenUrls.add(origSrc);
                 }
             });
-            mediaContainer.querySelectorAll('video[src*="video.twimg.com"]').forEach(video => {
-                const videoSrc = video.querySelector('source[src*="video.twimg.com"]')?.src || video.src;
-                // Ensure videoSrc is a string and not empty
-                if (typeof videoSrc === 'string' && videoSrc && !seenUrls.has(videoSrc)) {
-                    items.push({ src: videoSrc, type: 'video', el: video });
-                    seenUrls.add(videoSrc);
-                }
-            });
             return items;
         }
+
+        // Handles click event to open Fancybox for images
         function openFancybox(e) {
             const clickedElement = e.target;
-            // Do not open Fancybox if clicking on a username link within a tweet, or inside an existing Fancybox
             if (clickedElement.closest('.fancybox__container') ||
-                clickedElement.closest('a[href^="/"][role="link"] [data-testid="User-Name"]') || // More specific selector for username links
-                clickedElement.closest('a[href*="/status/"] [dir="ltr"] > span, a[href*="/status/"] [data-testid="socialContext"]')) { // Links to other tweets or social context
+                clickedElement.closest('a[href^="/"][role="link"] [data-testid="User-Name"]') ||
+                clickedElement.closest('a[href*="/status/"] [dir="ltr"] > span, a[href*="/status/"] [data-testid="socialContext"]')) {
                 return;
             }
-
-            const targetMediaElement = clickedElement.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), video[src*="video.twimg.com"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]');
-            if (!targetMediaElement) return; // No relevant media element was clicked
+            const targetMediaElement = clickedElement.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), [data-testid="tweetPhoto"]');
+            if (!targetMediaElement) return;
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
@@ -306,15 +286,10 @@
             if (targetMediaElement.tagName === 'IMG' && targetMediaElement.src.includes('pbs.twimg.com')) {
                 const clickedSrc = getOriginalImageUrl(targetMediaElement.src);
                 startIndex = galleryItems.findIndex(item => item.src === clickedSrc);
-            } else if (targetMediaElement.tagName === 'VIDEO') { // Could be the VIDEO tag itself or a source inside
-                const videoSrc = targetMediaElement.querySelector('source[src*="video.twimg.com"]')?.src || targetMediaElement.src;
-                const clickedSrc = videoSrc;
-                startIndex = galleryItems.findIndex(item => item.src === clickedSrc || item.el === targetMediaElement);
-            } else if (galleryItems.length > 0) { // Fallback if clicked on a container like data-testid="tweetPhoto"
-                 // Try to find the actual image element within the clicked container if possible, or default to first image
-                 const actualImgInContainer = targetMediaElement.querySelector('img[src*="pbs.twimg.com"]:not([src*="profile_images"])');
-                 const firstImage = actualImgInContainer ? galleryItems.find(item => item.el === actualImgInContainer) : galleryItems.find(item => item.type ==='image');
-                 if (firstImage) startIndex = galleryItems.indexOf(firstImage);
+            } else if (galleryItems.length > 0) {
+                const actualImgInContainer = targetMediaElement.querySelector('img[src*="pbs.twimg.com"]:not([src*="profile_images"])');
+                const firstImage = actualImgInContainer ? galleryItems.find(item => item.el === actualImgInContainer) : galleryItems.find(item => item.type ==='image');
+                if (firstImage) startIndex = galleryItems.indexOf(firstImage);
             }
             if (galleryItems.length > 0) {
                 Fancybox.show(galleryItems.map(item => ({
@@ -326,19 +301,17 @@
                 });
             }
         }
+
+        // Adds delegated click event listener for images
         function addMediaListeners() {
-            const targetNode = document.body; // Listen on the body for delegated events
+            const targetNode = document.body;
             if (!targetNode) return;
-
-            // Prevent attaching multiple listeners to the body
             if (targetNode.dataset.xFancyboxListenersAttached) return;
-
             targetNode.addEventListener('click', function(e) {
-                const mediaTarget = e.target.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), video[src*="video.twimg.com"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]');
+                const mediaTarget = e.target.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), [data-testid="tweetPhoto"]');
                 if (mediaTarget) {
-                    // Ensure the media is part of a tweet, timeline, or a modal/lightbox structure that we want to enhance
                     if (mediaTarget.closest('article[role="article"], [aria-label*="Timeline:"], div[aria-labelledby^="modal-header"]')) {
-                         const potentialGallery = getGalleryImages(mediaTarget);
+                        const potentialGallery = getGalleryImages(mediaTarget);
                         if (potentialGallery && potentialGallery.length > 0){
                             openFancybox(e);
                         }
@@ -347,8 +320,7 @@
             }, true);
             targetNode.dataset.xFancyboxListenersAttached = 'true';
         }
-        // Initial call to set up the delegated listener
-        addMediaListeners(); 
+        addMediaListeners();
     }
 
 })();
