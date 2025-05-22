@@ -313,32 +313,27 @@
 
         function openFancybox(e) {
             const clickedElement = e.target;
-            if (clickedElement.closest('.fancybox__container') ||
-                clickedElement.closest('a[href^="/"] [data-testid="User-Name"]')) {
+            // Ignore videos and their overlays
+            if (
+                clickedElement.closest('video, [data-testid="videoPlayer"], [aria-label*="Video"], .PlayableMedia-player, .fancybox__container')
+            ) {
                 return;
             }
-
-            const targetMediaElement = clickedElement.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), [data-testid="tweetPhoto"]');
-
+            // Only handle images
+            const targetMediaElement = clickedElement.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"])');
             if (!targetMediaElement) return;
-
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
-
-
             const galleryItems = getGalleryImages(targetMediaElement);
             let startIndex = 0;
-
             if (targetMediaElement.tagName === 'IMG' && targetMediaElement.src.includes('pbs.twimg.com')) {
                 const clickedSrc = getOriginalImageUrl(targetMediaElement.src);
                 startIndex = galleryItems.findIndex(item => item.src === clickedSrc);
             } else if (galleryItems.length > 0) {
-                 const firstImage = galleryItems.find(item => item.type ==='image');
-                 if (firstImage) startIndex = galleryItems.indexOf(firstImage);
+                const firstImage = galleryItems.find(item => item.type === 'image');
+                if (firstImage) startIndex = galleryItems.indexOf(firstImage);
             }
-
-
             if (galleryItems.length > 0) {
                 Fancybox.show(galleryItems.map(item => ({
                     src: item.src,
@@ -353,21 +348,24 @@
         function addMediaListeners() {
             const targetNode = document.querySelector('body');
             if (!targetNode) return;
-
             if (targetNode.dataset.xFancyboxListenersAttached) return;
-
             targetNode.addEventListener('click', function(e) {
-                const mediaTarget = e.target.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"]), [data-testid="tweetPhoto"]');
+                // Only handle image clicks, not videos
+                if (
+                    e.target.closest('video, [data-testid="videoPlayer"], [aria-label*="Video"], .PlayableMedia-player')
+                ) {
+                    return;
+                }
+                const mediaTarget = e.target.closest('img[src*="pbs.twimg.com"]:not([src*="profile_images"])');
                 if (mediaTarget) {
                     if (mediaTarget.closest('article[role="article"], [aria-label*="Timeline:"]')) {
                         const potentialGallery = getGalleryImages(mediaTarget);
-                        if(potentialGallery && potentialGallery.length > 0){
+                        if (potentialGallery && potentialGallery.length > 0) {
                             openFancybox(e);
                         }
                     }
                 }
             }, true);
-
             targetNode.dataset.xFancyboxListenersAttached = 'true';
         }
 
