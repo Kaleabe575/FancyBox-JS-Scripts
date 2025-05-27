@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Instagram Gallery with Fancybox Overlay
+// @name         Instagram Invisible Overlay Fancybox Gallery
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @description  Overlay an icon on Instagram images to open them in Fancybox
+// @version      1.0
+// @description  Use an invisible overlay on Instagram images to open a Fancybox gallery of all carousel images.
 // @author       You
 // @match        https://www.instagram.com/*
 // @require      https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.36/dist/fancybox/fancybox.umd.js
@@ -12,124 +12,132 @@
 // ==/UserScript==
 
 (function() {
-    'use strict';
+    "use strict";
 
     // Inject Fancybox CSS
-    GM_addStyle(GM_getResourceText('fancyboxCSS'));
+    GM_addStyle(GM_getResourceText("fancyboxCSS"));
 
-    // Inject custom CSS for our overlay icon and ensuring Instagram containers are positioned
+    // Custom CSS for the invisible overlay:
+    // We force the image container to be position: relative, then place an absolutely positioned div over it.
+    // The overlay is completely transparent but will catch pointer events.
     GM_addStyle(`
-        /* Ensure container of images is relatively positioned */
+        /* Ensure the container is positioned relative so the overlay covers it */
         div._aagv {
             position: relative;
         }
-        /* Style for the overlay icon; hidden by default and shown on hover */
-        .fancybox-overlay-icon {
+        /* The invisible overlay covers the entire container */
+        .invisible-overlay {
             position: absolute;
-            top: 5px;
-            left: 5px;
-            background: rgba(0, 0, 0, 0.6);
-            color: #fff;
-            border-radius: 3px;
-            padding: 4px 6px;
-            font-size: 14px;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
             z-index: 9999;
-            cursor: pointer;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            user-select: none;
-        }
-        div._aagv:hover .fancybox-overlay-icon {
-            opacity: 1;
+            /* IMPORTANT: pointer events should be active so clicks are captured */
+            pointer-events: auto;
         }
     `);
 
     /**
-     * Append an overlay icon to a container (if not already added).
-     * When the icon is clicked, we stop the event and open Fancybox.
+     * Append an invisible overlay to the given container if one is not already present.
+     * The overlay will cover the full container and intercept the click.
      */
-    function addOverlayIconToContainer(container) {
-        // Skip if the overlay is already present
-        if (container.querySelector('.fancybox-overlay-icon')) return;
-
-        let overlay = document.createElement('div');
-        overlay.className = 'fancybox-overlay-icon';
-        overlay.textContent = '🔍'; // This is the magnifying glass icon
-
-        // When user clicks the overlay, open Fancybox for this container
-        overlay.addEventListener('click', function(e) {
+    function addInvisibleOverlay(container) {
+        if (container.querySelector(".invisible-overlay")) return;
+        let overlay = document.createElement("div");
+        overlay.className = "invisible-overlay";
+        // Save the current image's src so that we know which image was clicked.
+        let img = container.querySelector("img");
+        if (img && img.src) {
+            overlay.dataset.src = img.src;
+        }
+        overlay.addEventListener("click", function(e) {
             e.preventDefault();
             e.stopPropagation();
-            openFancyboxForContainer(container);
+            openFancyboxForImage(overlay);
         });
-
         container.appendChild(overlay);
     }
 
     /**
-     * Gather all images inside the container (assumed to be any <img> element)
-     * and open them in Fancybox.
+     * When the overlay is clicked, this function finds the closest post container (the <article> element)
+     * and gathers all images contained in "div._aagv" within that post.
+     * It then opens Fancybox as a gallery starting with the image that was clicked.
      */
-    function openFancyboxForContainer(container) {
-        let galleryItems = [];
-        // Select all images in the container (adjust selector if needed)
-        container.querySelectorAll('img').forEach(img => {
-            if (img && img.src) {
-                galleryItems.push({ src: img.src, type: 'image' });
-            }
-        });
+    function openFancyboxForImage(overlay) {
+        // The overlay’s parent is the original image container.
+        let container = overlay.parentElement;
+        // Look upward for an <article> element (which usually wraps an Instagram post).
+        let article = container.closest("article");
 
-        if (galleryItems.length > 0) {
-            console.log('Opening Fancybox with gallery:', galleryItems);
-            Fancybox.show(galleryItems, {
-                startIndex: 0,
+        // Gather gallery images.
+        // If this is a carousel post, there should be multiple div._aagv elements,
+        // each containing an <img> – we collect their src values.
+        let galleryImages = [];
+        if (article) {
+            let imgs = article.querySelectorAll("div._aagv img");
+            imgs.forEach(img => {
+                if (img.src && !galleryImages.includes(img.src)) {
+                    galleryImages.push(img.src);
+                }
+            });
+        }
+        // Fallback: if no article (or only a single image), collect the single image from the container.
+        if (galleryImages.length === 0) {
+            let img = container.querySelector("img");
+            if (img && img.src) galleryImages.push(img.src);
+        }
+
+        // Determine the index of the clicked image.
+        let clickedSrc = overlay.dataset.src;
+        let startIndex = galleryImages.findIndex(src => src === clickedSrc);
+        if (startIndex < 0) startIndex = 0;
+
+        console.log("Opening Fancybox gallery:", galleryImages, "starting at index", startIndex);
+        Fancybox.show(
+            galleryImages.map(src => ({ src: src, type: "image" })),
+            {
+                startIndex: startIndex,
                 hideScrollbar: false,
-                Carousel: {
-                    infinite: false,
-                },
-                Images: {
-                    Panzoom: {
-                        maxScale: 5,
-                    },
-                },
-                Thumbs: {
-                    type: "classic",
-                },
+                Carousel: { infinite: false },
+                Images: { Panzoom: { maxScale: 5 } },
+                Thumbs: { type: "classic" },
                 Toolbar: {
                     display: {
                         left: ["infobar"],
                         middle: [],
-                        right: ["slideshow", "download", "thumbs", "close"],
-                    },
+                        right: ["slideshow", "download", "thumbs", "close"]
+                    }
                 }
-            });
-        }
+            }
+        );
     }
 
     /**
-     * Scan for all Instagram containers (div._aagv) on the page and add the overlay icon.
+     * Find all matching image containers and add the invisible overlay.
      */
-    function addOverlayIcons() {
-        let containers = document.querySelectorAll('div._aagv');
+    function addOverlaysToContainers() {
+        let containers = document.querySelectorAll("div._aagv");
         containers.forEach(container => {
-            addOverlayIconToContainer(container);
+            addInvisibleOverlay(container);
         });
     }
 
-    // Run initially on page load
-    addOverlayIcons();
+    // Initial run on page load.
+    addOverlaysToContainers();
 
-    // Use a MutationObserver to detect new elements as Instagram loads dynamic content.
-    const observer = new MutationObserver((mutations) => {
+    // Since Instagram loads many posts dynamically, we use a MutationObserver
+    // to add the invisible overlay to any new image containers that appear.
+    const observer = new MutationObserver(mutations => {
         mutations.forEach(mutation => {
             mutation.addedNodes.forEach(node => {
                 if (node.nodeType === Node.ELEMENT_NODE) {
-                    // If the added node itself is a container, or contains one, add the overlay icon
-                    if (node.matches('div._aagv')) {
-                        addOverlayIconToContainer(node);
-                    } else {
-                        node.querySelectorAll && node.querySelectorAll('div._aagv').forEach(container => {
-                            addOverlayIconToContainer(container);
+                    if (node.matches && node.matches("div._aagv")) {
+                        addInvisibleOverlay(node);
+                    } else if (node.querySelectorAll) {
+                        node.querySelectorAll("div._aagv").forEach(container => {
+                            addInvisibleOverlay(container);
                         });
                     }
                 }
