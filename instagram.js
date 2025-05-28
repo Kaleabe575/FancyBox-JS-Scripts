@@ -12,137 +12,83 @@
 // ==/UserScript==
 
 (function() {
-    "use strict";
-
-    // Inject Fancybox CSS
-    GM_addStyle(GM_getResourceText("fancyboxCSS"));
-
-    // Custom CSS for the invisible overlay:
-    // We force the image container to be position: relative, then place an absolutely positioned div over it.
-    // The overlay is completely transparent but will catch pointer events.
+    'use strict';
+    GM_addStyle(GM_getResourceText('fancyboxCSS'));
     GM_addStyle(`
-        /* Ensure the container is positioned relative so the overlay covers it */
-        div._aagv {
-            position: relative;
-        }
-        /* The invisible overlay covers the entire container */
+        div._aagv { position: relative; }
         .invisible-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: transparent;
-            z-index: 9999;
-            /* IMPORTANT: pointer events should be active so clicks are captured */
-            pointer-events: auto;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: transparent; z-index: 9999; pointer-events: auto;
+            cursor: pointer;
         }
     `);
 
-    /**
-     * Append an invisible overlay to the given container if one is not already present.
-     * The overlay will cover the full container and intercept the click.
-     */
     function addInvisibleOverlay(container) {
-        if (container.querySelector(".invisible-overlay")) return;
-        let overlay = document.createElement("div");
-        overlay.className = "invisible-overlay";
-        // Save the current image's src so that we know which image was clicked.
-        let img = container.querySelector("img");
-        if (img && img.src) {
-            overlay.dataset.src = img.src;
-        }
-        overlay.addEventListener("click", function(e) {
+        if (container.querySelector('.invisible-overlay')) return;
+        let overlay = document.createElement('div');
+        overlay.className = 'invisible-overlay';
+        let img = container.querySelector('img');
+        if (img && img.src) overlay.dataset.src = img.src;
+        overlay.addEventListener('click', function(e) {
+            if (e.ctrlKey) return;
             e.preventDefault();
             e.stopPropagation();
-            openFancyboxForImage(overlay);
+            openFancyboxForImage(overlay, e);
         });
         container.appendChild(overlay);
     }
 
-    /**
-     * When the overlay is clicked, this function finds the closest post container (the <article> element)
-     * and gathers all images contained in "div._aagv" within that post.
-     * It then opens Fancybox as a gallery starting with the image that was clicked.
-     */
-    function openFancyboxForImage(overlay) {
-        // The overlay’s parent is the original image container.
+    function openFancyboxForImage(overlay, event) {
         let container = overlay.parentElement;
-        // Look upward for an <article> element (which usually wraps an Instagram post).
-        let article = container.closest("article");
-
-        // Gather gallery images.
-        // If this is a carousel post, there should be multiple div._aagv elements,
-        // each containing an <img> – we collect their src values.
+        let article = container.closest('article');
         let galleryImages = [];
         if (article) {
-            let imgs = article.querySelectorAll("div._aagv img");
-            imgs.forEach(img => {
-                if (img.src && !galleryImages.includes(img.src)) {
-                    galleryImages.push(img.src);
-                }
+            article.querySelectorAll('div._aagv img').forEach(img => {
+                if (img.src && !galleryImages.includes(img.src)) galleryImages.push(img.src);
             });
         }
-        // Fallback: if no article (or only a single image), collect the single image from the container.
         if (galleryImages.length === 0) {
-            let img = container.querySelector("img");
+            let img = container.querySelector('img');
             if (img && img.src) galleryImages.push(img.src);
         }
-
-        // Determine the index of the clicked image.
         let clickedSrc = overlay.dataset.src;
         let startIndex = galleryImages.findIndex(src => src === clickedSrc);
         if (startIndex < 0) startIndex = 0;
-
-        console.log("Opening Fancybox gallery:", galleryImages, "starting at index", startIndex);
         Fancybox.show(
-            galleryImages.map(src => ({ src: src, type: "image" })),
+            galleryImages.map(src => ({ src, type: 'image' })),
             {
-                startIndex: startIndex,
+                startIndex,
                 hideScrollbar: false,
                 Carousel: { infinite: false },
                 Images: { Panzoom: { maxScale: 5 } },
-                Thumbs: { type: "classic" },
+                Thumbs: { type: 'classic' },
                 Toolbar: {
                     display: {
-                        left: ["infobar"],
+                        left: ['infobar'],
                         middle: [],
-                        right: ["slideshow", "download", "thumbs", "close"]
+                        right: ['slideshow', 'download', 'thumbs', 'close']
                     }
                 }
             }
         );
     }
 
-    /**
-     * Find all matching image containers and add the invisible overlay.
-     */
     function addOverlaysToContainers() {
-        let containers = document.querySelectorAll("div._aagv");
-        containers.forEach(container => {
-            addInvisibleOverlay(container);
-        });
+        document.querySelectorAll('div._aagv').forEach(addInvisibleOverlay);
     }
 
-    // Initial run on page load.
     addOverlaysToContainers();
-
-    // Since Instagram loads many posts dynamically, we use a MutationObserver
-    // to add the invisible overlay to any new image containers that appear.
-    const observer = new MutationObserver(mutations => {
+    new MutationObserver(mutations => {
         mutations.forEach(mutation => {
             mutation.addedNodes.forEach(node => {
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                    if (node.matches && node.matches("div._aagv")) {
+                if (node.nodeType === 1) {
+                    if (node.matches && node.matches('div._aagv')) {
                         addInvisibleOverlay(node);
                     } else if (node.querySelectorAll) {
-                        node.querySelectorAll("div._aagv").forEach(container => {
-                            addInvisibleOverlay(container);
-                        });
+                        node.querySelectorAll('div._aagv').forEach(addInvisibleOverlay);
                     }
                 }
             });
         });
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
+    }).observe(document.body, { childList: true, subtree: true });
 })();
