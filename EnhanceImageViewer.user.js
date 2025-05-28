@@ -9,6 +9,7 @@
 // @match        https://www.reddit.com/*
 // @match        https://x.com/*
 // @match        https://twitter.com/*
+// @match        https://www.instagram.com/*
 // @require      https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.36/dist/fancybox/fancybox.umd.js
 // @resource     fancyboxCSS https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.36/dist/fancybox/fancybox.css
 // @grant        GM_addStyle
